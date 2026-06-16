@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from "react";
-import { getClientById, updateClient } from "../shared/storage";
+// frontend/src/components/ProfileInfo.jsx
+import React, { useState, useEffect, useCallback } from "react";
+import { clients, subscribeToChanges } from "../shared/storage";
 
 export default function ProfileInfo({ currentUser, onProfileUpdate }) {
   const [profile, setProfile] = useState({
@@ -16,35 +17,51 @@ export default function ProfileInfo({ currentUser, onProfileUpdate }) {
   const [saveMessage, setSaveMessage] = useState("");
   const [isLoading, setIsLoading] = useState(true);
 
+  // Загрузка данных клиента из API (обернута в useCallback)
+  const loadClientData = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const clientData = await clients.getById(currentUser.id);
+      if (clientData) {
+        setProfile({
+          fullName: clientData.fullName || currentUser.fullName || "",
+          phone: clientData.phone || currentUser.phone || "",
+          email: clientData.email || currentUser.email || "",
+          status: clientData.role === "professional" ? "Профессионал" : "Любитель",
+          registrationDate: clientData.registrationDate || new Date().toISOString().slice(0, 10),
+          discountCard: clientData.discountCard || false,
+          availableDiscounts: [
+            clientData.role === "professional" ? "Скидка профессионала 10%" : null,
+            clientData.discountCard ? "Дисконтная карта 25%" : null,
+            "Скидка за большой заказ 15%",
+          ].filter(Boolean),
+        });
+      }
+    } catch (err) {
+      console.error("Ошибка загрузки данных клиента:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [currentUser.id, currentUser.fullName, currentUser.phone, currentUser.email]);
+
+  // Загрузка данных при монтировании и изменении currentUser.id
   useEffect(() => {
     loadClientData();
-  }, [currentUser.id]);
+  }, [loadClientData]);
 
-  const loadClientData = () => {
-    const clientData = getClientById(currentUser.id);
-    if (clientData) {
-      setProfile({
-        fullName: clientData.fullName || currentUser.fullName || "",
-        phone: clientData.phone || currentUser.phone || "",
-        email: clientData.email || currentUser.email || "",
-        status: clientData.role === "professional" ? "Профессионал" : "Любитель",
-        registrationDate: clientData.registrationDate || new Date().toISOString().slice(0, 10),
-        discountCard: clientData.discountCard || false,
-        availableDiscounts: [
-          clientData.role === "professional" ? "Скидка профессионала 10%" : null,
-          clientData.discountCard ? "Дисконтная карта 25%" : null,
-          "Скидка за большой заказ 15%",
-        ].filter(Boolean),
-      });
-    }
-    setIsLoading(false);
-  };
+  // Подписка на изменения данных
+  useEffect(() => {
+    const unsubscribe = subscribeToChanges(() => {
+      loadClientData();
+    });
+    return unsubscribe;
+  }, [loadClientData]);
 
   const handleChange = (e) => {
     setProfile({ ...profile, [e.target.name]: e.target.value });
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const updatedClient = {
       fullName: profile.fullName,
       phone: profile.phone,
@@ -53,17 +70,26 @@ export default function ProfileInfo({ currentUser, onProfileUpdate }) {
       discountCard: profile.discountCard,
     };
     
-    updateClient(currentUser.id, updatedClient);
-    
-    setEditing(false);
-    setSaveMessage("Данные успешно сохранены!");
-    setTimeout(() => setSaveMessage(""), 3000);
-    
-    if (onProfileUpdate) {
-      onProfileUpdate();
+    try {
+      await clients.update(currentUser.id, updatedClient);
+      
+      setEditing(false);
+      setSaveMessage("Данные успешно сохранены!");
+      setTimeout(() => setSaveMessage(""), 3000);
+      
+      if (onProfileUpdate) {
+        onProfileUpdate();
+      }
+      
+      // Обновляем localStorage для синхронизации
+      const updatedUser = { ...currentUser, ...updatedClient };
+      localStorage.setItem("currentUser", JSON.stringify(updatedUser));
+      
+    } catch (err) {
+      console.error("Ошибка сохранения данных:", err);
+      setSaveMessage("Ошибка сохранения данных!");
+      setTimeout(() => setSaveMessage(""), 3000);
     }
-    
-    window.dispatchEvent(new StorageEvent("storage", { key: "photo_clients" }));
   };
 
   const handleEdit = () => {
@@ -91,7 +117,11 @@ export default function ProfileInfo({ currentUser, onProfileUpdate }) {
         </button>
       </div>
 
-      {saveMessage && <div style={styles.saveMessage}>{saveMessage}</div>}
+      {saveMessage && (
+        <div style={{ ...styles.saveMessage, background: saveMessage.includes("Ошибка") ? "#ef4444" : "#10b981" }}>
+          {saveMessage}
+        </div>
+      )}
 
       <div style={styles.card}>
         <div style={styles.field}>
@@ -201,7 +231,6 @@ const styles = {
     transition: "background 0.2s ease",
   },
   saveMessage: {
-    background: "#10b981",
     color: "#fff",
     padding: "12px",
     borderRadius: "10px",

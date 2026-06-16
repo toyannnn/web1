@@ -4,6 +4,7 @@ export function calculateOrder({
   urgency,
   clientRole,
   hasDiscountCard,
+  personalDiscount = 0,
 }) {
   let total = servicePrice * photoCount;
 
@@ -25,6 +26,11 @@ export function calculateOrder({
   // Скидка за большое количество
   if (photoCount >= 100) {
     total *= 0.85;
+  }
+
+  // Персональная скидка клиента
+  if (personalDiscount > 0) {
+    total *= (1 - personalDiscount / 100);
   }
 
   return Math.round(total);

@@ -1,6 +1,6 @@
-// frontend/src/components/NewOrderForm.jsx
+// frontend/src/components/EditOrderForm.jsx
 import React, { useState, useEffect } from "react";
-import { services, products } from "../shared/storage";
+import { services, products, orders } from "../shared/storage";
 
 const calculateOrderPrice = ({
   servicePrice,
@@ -19,80 +19,63 @@ const calculateOrderPrice = ({
   return Math.round(total);
 };
 
-export default function NewOrderForm({ onSubmit, selectedService, selectedProduct, onBack, clientInfo }) {
+export default function EditOrderForm({ orderId, onBack, clientInfo, onSaved }) {
   const [servicesList, setServicesList] = useState([]);
   const [productsList, setProductsList] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
   const [formData, setFormData] = useState({
+    type: "service",
     service: null,
-    product: selectedProduct || null,
-    type: selectedProduct ? "product" : "service",
-    photoCount: 36,
+    product: null,
+    photoCount: 1,
     productQuantity: 1,
-    photosPerFrame: 1,
-    format: "10x15",
-    paperType: "Глянцевая",
     urgent: false,
-    discountCard: clientInfo?.discountCard ?? false,
-    clientRole: clientInfo?.role ?? "Любитель",
-    personalDiscount: clientInfo?.personalDiscount ?? 0,
   });
 
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [servicesData, productsData] = await Promise.all([
+        const [orderData, servicesData, productsData] = await Promise.all([
+          orders.getById(orderId),
           services.getAll(),
           products.getAll(),
         ]);
         setServicesList(servicesData);
         setProductsList(productsData);
-        if (selectedService) {
-          setFormData(prev => ({ ...prev, service: selectedService, type: "service", product: null }));
-        } else if (selectedProduct) {
-          setFormData(prev => ({ ...prev, product: selectedProduct, type: "product", service: null }));
-        } else if (servicesData.length > 0) {
-          setFormData(prev => ({ ...prev, service: servicesData[0] }));
+
+        if (orderData.items && orderData.items.length > 0) {
+          const item = orderData.items[0];
+          const isService = item.type === "service";
+          setFormData({
+            type: isService ? "service" : "product",
+            service: isService ? servicesData.find(s => s.name === item.name) || servicesData[0] : null,
+            product: !isService ? productsData.find(p => p.name === item.name) || productsData[0] : null,
+            photoCount: isService ? item.quantity : 1,
+            productQuantity: !isService ? item.quantity : 1,
+            urgent: orderData.isUrgent || false,
+          });
         }
       } catch (err) {
-        console.error("Ошибка загрузки данных:", err);
+        console.error("Ошибка загрузки заказа:", err);
+        setError("Не удалось загрузить заказ");
       } finally {
         setLoading(false);
       }
     };
     loadData();
-  }, [selectedService, selectedProduct]);
-
-  useEffect(() => {
-    if (selectedService) {
-      setFormData(prev => ({ ...prev, service: selectedService, type: "service", product: null }));
-    }
-    if (selectedProduct) {
-      setFormData(prev => ({ ...prev, product: selectedProduct, type: "product", service: null }));
-    }
-  }, [selectedService, selectedProduct]);
-
-  useEffect(() => {
-    if (clientInfo) {
-      setFormData(prev => ({
-        ...prev,
-        discountCard: clientInfo.discountCard ?? false,
-        clientRole: clientInfo.role ?? "Любитель",
-        personalDiscount: clientInfo.personalDiscount ?? 0,
-      }));
-    }
-  }, [clientInfo]);
+  }, [orderId]);
 
   const calculateTotal = () => {
     if (formData.type === "product" && formData.product) {
-      const qty = formData.productQuantity || 1;
       return calculateOrderPrice({
         servicePrice: formData.product.price || 0,
-        photoCount: qty,
+        photoCount: formData.productQuantity || 1,
         urgency: formData.urgent,
-        clientRole: formData.clientRole,
-        hasDiscountCard: formData.discountCard,
-        personalDiscount: formData.personalDiscount,
+        clientRole: clientInfo?.role ?? "Любитель",
+        hasDiscountCard: clientInfo?.discountCard ?? false,
+        personalDiscount: clientInfo?.personalDiscount ?? 0,
       });
     }
     if (!formData.service) return 0;
@@ -100,30 +83,44 @@ export default function NewOrderForm({ onSubmit, selectedService, selectedProduc
       servicePrice: formData.service.price || 0,
       photoCount: formData.photoCount || 0,
       urgency: formData.urgent,
-      clientRole: formData.clientRole,
-      hasDiscountCard: formData.discountCard,
-      personalDiscount: formData.personalDiscount,
+      clientRole: clientInfo?.role ?? "Любитель",
+      hasDiscountCard: clientInfo?.discountCard ?? false,
+      personalDiscount: clientInfo?.personalDiscount ?? 0,
     });
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     const total = calculateTotal();
     if (total <= 0) {
       alert("Пожалуйста, заполните все поля корректно");
       return;
     }
 
-    const orderData = {
-      type: formData.type,
-      serviceId: formData.type === "service" ? formData.service?.id : undefined,
-      productId: formData.type === "product" ? formData.product?.id : undefined,
-      quantity: formData.type === "service" ? formData.photoCount : (formData.productQuantity || 1),
-      urgent: formData.urgent,
-      total: total,
-    };
+    setSaving(true);
+    setError(null);
 
-    console.log("Submitting order data:", orderData);
-    onSubmit(orderData);
+    try {
+      const items = [{
+        itemType: formData.type,
+        serviceId: formData.type === "service" ? formData.service?.id : undefined,
+        productId: formData.type === "product" ? formData.product?.id : undefined,
+        quantity: formData.type === "service" ? formData.photoCount : (formData.productQuantity || 1),
+      }];
+
+      await orders.update(orderId, {
+        isUrgent: formData.urgent,
+        items: items,
+      });
+
+      alert("Заказ успешно обновлён");
+      onSaved?.();
+      onBack();
+    } catch (err) {
+      console.error("Ошибка обновления заказа:", err);
+      setError(err.message || "Не удалось обновить заказ");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const total = calculateTotal();
@@ -132,12 +129,26 @@ export default function NewOrderForm({ onSubmit, selectedService, selectedProduc
     return <div style={{ textAlign: "center", padding: "40px" }}>Загрузка...</div>;
   }
 
+  if (error && !formData.service && !formData.product) {
+    return (
+      <div style={styles.container}>
+        <div style={styles.header}>
+          <button style={styles.backButton} onClick={onBack}>← Назад</button>
+          <h2>Редактирование заказа</h2>
+        </div>
+        <p style={{ color: "red" }}>{error}</p>
+      </div>
+    );
+  }
+
   return (
     <div style={styles.container}>
       <div style={styles.header}>
         <button style={styles.backButton} onClick={onBack}>← Назад</button>
-        <h2>Создание заказа</h2>
+        <h2>Редактирование заказа #{orderId}</h2>
       </div>
+
+      {error && <p style={{ color: "red", margin: "0 0 12px" }}>{error}</p>}
 
       <div style={styles.form}>
         <label>Тип заказа</label>
@@ -173,29 +184,6 @@ export default function NewOrderForm({ onSubmit, selectedService, selectedProduc
               value={formData.photoCount}
               onChange={(e) => setFormData({ ...formData, photoCount: Number(e.target.value) || 0 })}
             />
-
-            <label>Фото с каждого кадра</label>
-            <input
-              type="number"
-              min="1"
-              value={formData.photosPerFrame}
-              onChange={(e) => setFormData({ ...formData, photosPerFrame: Number(e.target.value) || 1 })}
-            />
-
-            <label>Формат</label>
-            <select value={formData.format} onChange={(e) => setFormData({ ...formData, format: e.target.value })}>
-              <option>10x15</option>
-              <option>15x21</option>
-              <option>A4</option>
-              <option>A3</option>
-            </select>
-
-            <label>Тип бумаги</label>
-            <select value={formData.paperType} onChange={(e) => setFormData({ ...formData, paperType: e.target.value })}>
-              <option>Глянцевая</option>
-              <option>Матовая</option>
-              <option>Премиум</option>
-            </select>
           </>
         ) : (
           <>
@@ -218,7 +206,6 @@ export default function NewOrderForm({ onSubmit, selectedService, selectedProduc
             {formData.product && (
               <div style={styles.productInfo}>
                 <h3>{formData.product.name}</h3>
-                <p>Категория: {formData.product.category}</p>
                 <p>Цена: {formData.product.price} ₽</p>
                 <p>В наличии: {formData.product.quantity} шт.</p>
               </div>
@@ -240,18 +227,13 @@ export default function NewOrderForm({ onSubmit, selectedService, selectedProduc
           Срочный заказ (цена ×2)
         </label>
 
-        <label style={styles.checkbox}>
-          <input type="checkbox" checked={formData.discountCard} onChange={() => setFormData({ ...formData, discountCard: !formData.discountCard })} />
-          Дисконтная карта (скидка 25%)
-        </label>
-
         <div style={styles.summary}>
           <h3>Итоговая стоимость</h3>
           <h2 style={styles.totalPrice}>{isNaN(total) ? 0 : total} ₽</h2>
         </div>
 
-        <button style={styles.button} onClick={handleSubmit}>
-          Оформить заказ
+        <button style={styles.button} onClick={handleSubmit} disabled={saving}>
+          {saving ? "Сохранение..." : "Сохранить изменения"}
         </button>
       </div>
     </div>

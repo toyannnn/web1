@@ -70,13 +70,27 @@ function ClientsManagement() {
 
   useEffect(() => {
     if (selectedClient) {
-      const orders = getClientOrders(selectedClient.id);
-      setClientOrders(orders);
+      const loadClientOrders = async () => {
+        try {
+          const data = await getClientOrders(selectedClient.id);
+          setClientOrders(Array.isArray(data) ? data : []);
+        } catch (err) {
+          console.error("Ошибка загрузки заказов клиента:", err);
+          setClientOrders([]);
+        }
+      };
+      loadClientOrders();
     }
   }, [selectedClient, refreshTrigger]);
 
-  const loadClients = () => {
-    setClients(getClients());
+  const loadClients = async () => {
+    try {
+      const data = await getClients();
+      setClients(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Ошибка загрузки клиентов:", err);
+      setClients([]);
+    }
   };
 
   const filteredClients = useMemo(() => {
@@ -140,7 +154,7 @@ function ClientsManagement() {
                 <div style={{ fontSize: "12px", color: "#666" }}>Логин: {client.login}</div>
                 <div style={{ fontSize: "12px", color: "#666" }}>{client.phone || "Нет телефона"}</div>
                 <div style={{ fontSize: "12px", color: "#1976d2", marginTop: "5px" }}>
-                  📅 Регистрация: {client.registrationDate}
+                  Регистрация: {client.registrationDate}
                 </div>
                 <div style={{ marginTop: "5px" }}>
                   <Badge text={client.role === "professional" ? "Профессионал" : "Любитель"} color={client.role === "professional" ? "#ff9800" : "#4caf50"} />
@@ -199,16 +213,16 @@ function ClientsManagement() {
                     <tbody>
                       {clientOrders.map((order) => (
                         <tr key={order.id} style={styles.tableRow}>
-                          <td style={styles.td}>#{order.id}</td>
-                          <td style={styles.td}>{order.date}</td>
-                          <td style={styles.td}>{order.service || order.product}</td>
+                          <td style={styles.td}>{order.orderNumber || `#${order.id}`}</td>
+                          <td style={styles.td}>{order.orderDate}</td>
+                          <td style={styles.td}>{order.items?.map(i => i.name).join(", ") || "—"}</td>
                           <td style={styles.td}>
-                            <Badge text={order.type === "service" ? "Услуга" : "Товар"} color={order.type === "service" ? "#1976d2" : "#2e7d32"} />
+                            <Badge text={order.isUrgent ? "Срочный" : "Стандарт"} color={order.isUrgent ? "#ef4444" : "#1976d2"} />
                           </td>
                           <td style={styles.td}>
                             <Badge text={order.status} color={getStatusColor(order.status)} />
                           </td>
-                          <td style={styles.td}><b>{order.total} ₽</b></td>
+                          <td style={styles.td}><b>{order.totalAmount} ₽</b></td>
                           <td style={styles.td}>
                             <select
                               value={order.status}
@@ -263,11 +277,16 @@ function UsersManagement({ onUsersUpdate }) {
     loadUsers();
   }, []);
 
-  const loadUsers = () => {
-    const allUsers = getUsers();
-    const filteredForManagement = allUsers.filter(u => u.role === "admin" || u.role === "employee");
-    setUsers(filteredForManagement);
-    if (onUsersUpdate) onUsersUpdate();
+  const loadUsers = async () => {
+    try {
+      const allUsers = await getUsers();
+      const filteredForManagement = (Array.isArray(allUsers) ? allUsers : []).filter(u => u.role === "admin" || u.role === "employee");
+      setUsers(filteredForManagement);
+      if (onUsersUpdate) onUsersUpdate();
+    } catch (err) {
+      console.error("Ошибка загрузки пользователей:", err);
+      setUsers([]);
+    }
   };
 
   const showMessage = (msg, isError = false) => {
@@ -280,14 +299,14 @@ function UsersManagement({ onUsersUpdate }) {
     return users.filter(u => u.role === roleFilter);
   }, [roleFilter, users]);
 
-  const handleAddUser = () => {
+  const handleAddUser = async () => {
     if (!newUser.login || !newUser.password || !newUser.fullName) {
       showMessage("Заполните логин, пароль и ФИО", true);
       return;
     }
     try {
-      addUser(newUser);
-      loadUsers();
+      await addUser(newUser);
+      await loadUsers();
       setShowAddForm(false);
       setNewUser({ login: "", password: "", fullName: "", role: "employee", phone: "", email: "" });
       showMessage(`Пользователь "${newUser.fullName}" успешно добавлен`);
@@ -300,27 +319,39 @@ function UsersManagement({ onUsersUpdate }) {
     setEditingUser({ ...user });
   };
 
-  const handleSaveEdit = () => {
-    updateUser(editingUser.id, editingUser);
-    loadUsers();
-    setEditingUser(null);
-    showMessage("Данные пользователя сохранены");
-  };
-
-  const handleDeleteUser = (userId, userName) => {
-    if (window.confirm(`Вы уверены, что хотите удалить пользователя "${userName}"?`)) {
-      deleteUser(userId);
-      loadUsers();
-      showMessage(`Пользователь "${userName}" удален`);
+  const handleSaveEdit = async () => {
+    try {
+      await updateUser(editingUser.id, editingUser);
+      await loadUsers();
+      setEditingUser(null);
+      showMessage("Данные пользователя сохранены");
+    } catch (error) {
+      showMessage(error.message, true);
     }
   };
 
-  const handleResetPassword = (userId) => {
+  const handleDeleteUser = async (userId, userName) => {
+    if (window.confirm(`Вы уверены, что хотите удалить пользователя "${userName}"?`)) {
+      try {
+        await deleteUser(userId);
+        await loadUsers();
+        showMessage(`Пользователь "${userName}" удален`);
+      } catch (error) {
+        showMessage(error.message, true);
+      }
+    }
+  };
+
+  const handleResetPassword = async (userId) => {
     const newPassword = prompt("Введите новый пароль для пользователя:");
     if (newPassword && newPassword.length >= 4) {
-      updateUser(userId, { password: newPassword });
-      loadUsers();
-      showMessage("Пароль успешно изменен");
+      try {
+        await updateUser(userId, { password: newPassword });
+        await loadUsers();
+        showMessage("Пароль успешно изменен");
+      } catch (error) {
+        showMessage(error.message, true);
+      }
     } else if (newPassword) {
       showMessage("Пароль должен содержать минимум 4 символа", true);
     }
@@ -431,7 +462,7 @@ function UsersManagement({ onUsersUpdate }) {
 
             <div style={styles.modalButtons}>
               <button style={styles.saveButton} onClick={handleAddUser}>➕ Добавить</button>
-              <button style={styles.cancelButton} onClick={() => setShowAddForm(false)}>✖ Отмена</button>
+              <button style={styles.cancelButton} onClick={() => setShowAddForm(false)}>Отмена</button>
             </div>
           </div>
         </div>
@@ -454,7 +485,7 @@ function UsersManagement({ onUsersUpdate }) {
             {filteredUsers.length === 0 ? (
               <tr>
                 <td colSpan="7" style={{ textAlign: "center", padding: "40px", color: "#94a3b8" }}>
-                  📭 Нет пользователей для отображения
+                  Нет пользователей для отображения
                 </td>
               </tr>
             ) : (
@@ -552,7 +583,9 @@ function BranchesPage() {
   const [newBranch, setNewBranch] = useState({
     name: "",
     type: "Филиал",
-    address: "",
+    city: "",
+    street: "",
+    building: "",
     phone: "",
     email: "",
     workingHours: "",
@@ -562,8 +595,14 @@ function BranchesPage() {
     loadBranches();
   }, []);
 
-  const loadBranches = () => {
-    setBranches(getBranches());
+  const loadBranches = async () => {
+    try {
+      const data = await getBranches();
+      setBranches(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Ошибка загрузки точек:", err);
+      setBranches([]);
+    }
   };
 
   const showMessage = (msg, isError = false) => {
@@ -580,39 +619,55 @@ function BranchesPage() {
     setEditingBranch({ ...branch });
   };
 
-  const handleSaveEdit = () => {
-    updateBranch(editingBranch.id, editingBranch);
-    loadBranches();
-    setEditingBranch(null);
-    showMessage("Данные точки сохранены");
+  const handleSaveEdit = async () => {
+    try {
+      await updateBranch(editingBranch.id, editingBranch);
+      await loadBranches();
+      setEditingBranch(null);
+      showMessage("Данные точки сохранены");
+    } catch (error) {
+      showMessage(error.message, true);
+    }
   };
 
-  const handleArchive = (branchId) => {
+  const handleArchive = async (branchId) => {
     const branch = branches.find(b => b.id === branchId);
     const newStatus = branch.status === "Активна" ? "Архив" : "Активна";
-    updateBranch(branchId, { status: newStatus });
-    loadBranches();
-    showMessage(newStatus === "Архив" ? "Точка отправлена в архив" : "Точка восстановлена из архива");
-  };
-
-  const handleDelete = (branchId) => {
-    if (window.confirm("Вы уверены, что хотите удалить эту точку? Это действие нельзя отменить.")) {
-      deleteBranch(branchId);
-      loadBranches();
-      showMessage("Точка удалена");
+    try {
+      await updateBranch(branchId, { status: newStatus });
+      await loadBranches();
+      showMessage(newStatus === "Архив" ? "Точка отправлена в архив" : "Точка восстановлена из архива");
+    } catch (error) {
+      showMessage(error.message, true);
     }
   };
 
-  const handleAddBranch = () => {
-    if (!newBranch.name || !newBranch.address) {
-      showMessage("Заполните название и адрес", true);
+  const handleDelete = async (branchId) => {
+    if (window.confirm("Вы уверены, что хотите удалить эту точку? Это действие нельзя отменить.")) {
+      try {
+        await deleteBranch(branchId);
+        await loadBranches();
+        showMessage("Точка удалена");
+      } catch (error) {
+        showMessage(error.message, true);
+      }
+    }
+  };
+
+  const handleAddBranch = async () => {
+    if (!newBranch.name || !newBranch.city) {
+      showMessage("Заполните название и город", true);
       return;
     }
-    addBranch(newBranch);
-    loadBranches();
-    setShowAddForm(false);
-    setNewBranch({ name: "", type: "Филиал", address: "", phone: "", email: "", workingHours: "" });
-    showMessage("Новая точка добавлена");
+    try {
+      await addBranch(newBranch);
+      await loadBranches();
+      setShowAddForm(false);
+      setNewBranch({ name: "", type: "Филиал", city: "", street: "", building: "", phone: "", email: "", workingHours: "" });
+      showMessage("Новая точка добавлена");
+    } catch (error) {
+      showMessage(error.message, true);
+    }
   };
 
   return (
@@ -654,9 +709,21 @@ function BranchesPage() {
               <option>Магазин</option>
             </select>
             <input 
-              placeholder="Адрес*" 
-              value={newBranch.address} 
-              onChange={(e) => setNewBranch({ ...newBranch, address: e.target.value })} 
+              placeholder="Город*" 
+              value={newBranch.city} 
+              onChange={(e) => setNewBranch({ ...newBranch, city: e.target.value })} 
+              style={styles.modalInput}
+            />
+            <input 
+              placeholder="Улица" 
+              value={newBranch.street} 
+              onChange={(e) => setNewBranch({ ...newBranch, street: e.target.value })} 
+              style={styles.modalInput}
+            />
+            <input 
+              placeholder="Здание" 
+              value={newBranch.building} 
+              onChange={(e) => setNewBranch({ ...newBranch, building: e.target.value })} 
               style={styles.modalInput}
             />
             <input 
@@ -695,6 +762,7 @@ function BranchesPage() {
               <th style={styles.th}>Телефон</th>
               <th style={styles.th}>Email</th>
               <th style={styles.th}>Режим работы</th>
+              <th style={styles.th}>Дата открытия</th>
               <th style={styles.th}>Филиал-обработчик</th>
               <th style={styles.th}>Статус</th>
               <th style={styles.th}>Действия</th>
@@ -761,6 +829,7 @@ function BranchesPage() {
                     />
                   ) : branch.workingHours || "-"}
                 </td>
+                <td style={styles.td}>{branch.openDate || '-'}</td>
                 <td style={styles.td}>{branch.processor || "-"}</td>
                 <td style={styles.td}>
                   <Badge text={branch.status} color={branch.status === "Активна" ? "#4caf50" : "#757575"} />
@@ -815,6 +884,7 @@ function EmployeesPage() {
   const [newEmployee, setNewEmployee] = useState({
     name: "",
     login: "",
+    password: "",
     role: "Сотрудник точки",
     phone: "",
     email: "",
@@ -824,8 +894,14 @@ function EmployeesPage() {
     loadEmployees();
   }, []);
 
-  const loadEmployees = () => {
-    setEmployees(getEmployees());
+  const loadEmployees = async () => {
+    try {
+      const data = await getEmployees();
+      setEmployees(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Ошибка загрузки сотрудников:", err);
+      setEmployees([]);
+    }
   };
 
   const showMessage = (msg) => {
@@ -838,38 +914,65 @@ function EmployeesPage() {
     return employees.filter((e) => e.role === roleFilter);
   }, [roleFilter, employees]);
 
-  const handleChangeRole = (id, newRole) => {
-    updateEmployee(id, { role: newRole });
-    loadEmployees();
-    showMessage("Роль сотрудника изменена");
-  };
-
-  const handleFire = (id) => {
-    if (window.confirm("Вы уверены, что хотите уволить сотрудника?")) {
-      updateEmployee(id, { status: "Уволен" });
-      loadEmployees();
-      showMessage("Сотрудник уволен");
+  const handleChangeRole = async (id, newRole) => {
+    try {
+      await updateEmployee(id, { role: newRole });
+      await loadEmployees();
+      showMessage("Роль сотрудника изменена");
+    } catch (error) {
+      showMessage(error.message, true);
     }
   };
 
-  const handleBlock = (id) => {
-    const employee = employees.find(e => e.id === id);
-    const newStatus = employee.status === "Активен" ? "Заблокирован" : "Активен";
-    updateEmployee(id, { status: newStatus });
-    loadEmployees();
-    showMessage(newStatus === "Активен" ? "Сотрудник разблокирован" : "Сотрудник заблокирован");
+  const handleFire = async (id) => {
+    if (window.confirm("Вы уверены, что хотите уволить сотрудника?")) {
+      try {
+        await updateEmployee(id, { status: "Уволен" });
+        await loadEmployees();
+        showMessage("Сотрудник уволен");
+      } catch (error) {
+        showMessage(error.message, true);
+      }
+    }
   };
 
-  const handleAddEmployee = () => {
+  const handleBlock = async (id) => {
+    const employee = employees.find(e => e.id === id);
+    const newStatus = employee.status === "Активен" ? "Заблокирован" : "Активен";
+    try {
+      await updateEmployee(id, { status: newStatus });
+      await loadEmployees();
+      showMessage(newStatus === "Активен" ? "Сотрудник разблокирован" : "Сотрудник заблокирован");
+    } catch (error) {
+      showMessage(error.message, true);
+    }
+  };
+
+  const handleAddEmployee = async () => {
     if (!newEmployee.name || !newEmployee.login) {
       showMessage("Заполните ФИО и логин");
       return;
     }
-    addEmployee(newEmployee);
-    loadEmployees();
-    setShowAddForm(false);
-    setNewEmployee({ name: "", login: "", role: "Сотрудник точки", phone: "", email: "" });
-    showMessage("Новый сотрудник добавлен");
+    try {
+      const nameParts = newEmployee.name.trim().split(/\s+/);
+      const payload = {
+        lastName: nameParts[0] || "",
+        firstName: nameParts[1] || "",
+        middleName: nameParts[2] || "",
+        login: newEmployee.login,
+        password: newEmployee.password || "12345",
+        role: newEmployee.role,
+        phone: newEmployee.phone,
+        email: newEmployee.email,
+      };
+      await addEmployee(payload);
+      await loadEmployees();
+      setShowAddForm(false);
+      setNewEmployee({ name: "", login: "", password: "", role: "Сотрудник точки", phone: "", email: "" });
+      showMessage("Новый сотрудник добавлен");
+    } catch (error) {
+      showMessage(error.message, true);
+    }
   };
 
   const getStatusColor = (status) => {
@@ -914,6 +1017,13 @@ function EmployeesPage() {
               placeholder="Логин*" 
               value={newEmployee.login} 
               onChange={(e) => setNewEmployee({ ...newEmployee, login: e.target.value })} 
+              style={styles.modalInput}
+            />
+            <input 
+              type="password"
+              placeholder="Пароль (по умолчанию: 12345)" 
+              value={newEmployee.password} 
+              onChange={(e) => setNewEmployee({ ...newEmployee, password: e.target.value })} 
               style={styles.modalInput}
             />
             <input 
@@ -1016,20 +1126,34 @@ function EmployeesPage() {
 function ClientsPage() {
   const [selectedClient, setSelectedClient] = useState(null);
   const [clientsData, setClientsData] = useState([]);
-  const orders = getOrders();
+  const [ordersList, setOrdersList] = useState([]);
+
+  const loadOrders = async () => {
+    try {
+      const data = await getOrders();
+      setOrdersList(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Ошибка загрузки заказов:", err);
+      setOrdersList([]);
+    }
+  };
+
+  useEffect(() => {
+    loadOrders();
+  }, []);
 
   useEffect(() => {
     const clientMap = new Map();
-    orders.forEach(order => {
-      const clientName = order.client || "Клиент";
+    ordersList.forEach(order => {
+      const clientName = order.clientName || "Клиент";
       if (!clientMap.has(clientName)) {
         clientMap.set(clientName, { name: clientName, orders: [], total: 0 });
       }
       clientMap.get(clientName).orders.push(order);
-      clientMap.get(clientName).total += order.total;
+      clientMap.get(clientName).total += (order.totalAmount || 0);
     });
     setClientsData(Array.from(clientMap.values()));
-  }, [orders]);
+  }, [ordersList]);
 
   const getStatusColor = (status) => {
     switch(status) {
@@ -1095,14 +1219,14 @@ function ClientsPage() {
                   <tbody>
                     {selectedClient.orders.map((order) => (
                       <tr key={order.id} style={styles.tableRow}>
-                        <td style={styles.td}>{order.id}</td>
-                        <td style={styles.td}>{order.date}</td>
-                        <td style={styles.td}>{order.service || order.product}</td>
-                        <td style={styles.td}>{order.type === "service" ? "Услуга" : "Товар"}</td>
+                        <td style={styles.td}>{order.orderNumber || order.id}</td>
+                        <td style={styles.td}>{order.orderDate}</td>
+                        <td style={styles.td}>{order.items?.map(i => i.name).join(", ") || "—"}</td>
+                        <td style={styles.td}>{order.isUrgent ? "Срочный" : "Стандарт"}</td>
                         <td style={styles.td}>
                           <Badge text={order.status} color={getStatusColor(order.status)} />
                         </td>
-                        <td style={styles.td}><b>{order.total} ₽</b></td>
+                        <td style={styles.td}><b>{order.totalAmount} ₽</b></td>
                       </tr>
                     ))}
                   </tbody>
@@ -1126,22 +1250,32 @@ function OrdersPage() {
   const [statusFilter, setStatusFilter] = useState("Все");
   const [clientFilter, setClientFilter] = useState("");
 
+  const loadOrders = async () => {
+    try {
+      const data = await getOrders();
+      setOrders(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Ошибка загрузки заказов:", err);
+      setOrders([]);
+    }
+  };
+
   useEffect(() => {
-    setOrders(getOrders());
-    const handleStorageChange = () => setOrders(getOrders());
+    loadOrders();
+    const handleStorageChange = () => loadOrders();
     subscribeToChanges(handleStorageChange);
     return () => window.removeEventListener("storage", handleStorageChange);
   }, []);
 
-  const handleStatusChange = (orderId, newStatus) => {
-    updateOrderStatus(orderId, newStatus);
-    setOrders(getOrders());
+  const handleStatusChange = async (orderId, newStatus) => {
+    await updateOrderStatus(orderId, newStatus);
+    await loadOrders();
   };
 
   const filteredOrders = useMemo(() => {
     return orders.filter((order) => {
       const statusMatch = statusFilter === "Все" || order.status === statusFilter;
-      const clientMatch = (order.client || "").toLowerCase().includes(clientFilter.toLowerCase());
+      const clientMatch = (order.clientName || "").toLowerCase().includes(clientFilter.toLowerCase());
       return statusMatch && clientMatch;
     });
   }, [orders, statusFilter, clientFilter]);
@@ -1157,7 +1291,7 @@ function OrdersPage() {
   };
 
   const getTotalSum = () => {
-    return filteredOrders.reduce((sum, order) => sum + order.total, 0);
+    return filteredOrders.reduce((sum, order) => sum + (order.totalAmount || 0), 0);
   };
 
   return (
@@ -1166,7 +1300,7 @@ function OrdersPage() {
         <h2>Журнал заказов</h2>
         <div style={styles.headerControls}>
           <div style={styles.totalSumCard}>
-            📊 Общая сумма: <b>{getTotalSum()} ₽</b>
+            Общая сумма: <b>{getTotalSum()} ₽</b>
           </div>
         </div>
       </div>
@@ -1174,7 +1308,7 @@ function OrdersPage() {
       <div style={styles.filtersBar}>
         <input 
           type="text" 
-          placeholder="🔍 Поиск по клиенту..." 
+          placeholder="Поиск по клиенту..." 
           value={clientFilter} 
           onChange={(e) => setClientFilter(e.target.value)} 
           style={styles.searchInput}
@@ -1206,26 +1340,26 @@ function OrdersPage() {
             {filteredOrders.length === 0 ? (
               <tr>
                 <td colSpan="8" style={{ textAlign: "center", padding: "40px", color: "#999" }}>
-                  📭 Нет заказов, соответствующих фильтрам
+                  Нет заказов, соответствующих фильтрам
                 </td>
               </tr>
             ) : (
               filteredOrders.map((order) => (
                 <tr key={order.id} style={styles.tableRow}>
-                  <td style={styles.td}>#{order.id}</td>
-                  <td style={styles.td}>{order.date}</td>
-                  <td style={styles.td}><b>{order.client || "Клиент"}</b></td>
-                  <td style={styles.td}>{order.service || order.product}</td>
+                  <td style={styles.td}>{order.orderNumber || `#${order.id}`}</td>
+                  <td style={styles.td}>{order.orderDate}</td>
+                  <td style={styles.td}><b>{order.clientName || "Клиент"}</b></td>
+                  <td style={styles.td}>{order.items?.map(i => i.name).join(", ") || "—"}</td>
                   <td style={styles.td}>
                     <Badge 
-                      text={order.type === "service" ? "Услуга" : "Товар"} 
-                      color={order.type === "service" ? "#1976d2" : "#2e7d32"} 
+                      text={order.isUrgent ? "Срочный" : "Стандарт"} 
+                      color={order.isUrgent ? "#ef4444" : "#1976d2"} 
                     />
                   </td>
                   <td style={styles.td}>
                     <Badge text={order.status} color={getStatusColor(order.status)} />
                   </td>
-                  <td style={styles.td}><b style={{ color: "#1976d2" }}>{order.total} ₽</b></td>
+                  <td style={styles.td}><b style={{ color: "#1976d2" }}>{order.totalAmount} ₽</b></td>
                   <td style={styles.td}>
                     <select 
                       value={order.status} 

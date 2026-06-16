@@ -1,129 +1,154 @@
-import React, { useState, useEffect } from "react";
-import ServicesCatalog from "./components/ServicesCatalog";
-import ProductsCatalog from "./components/ProductsCatalog";
-import NewOrderForm from "./components/NewOrderForm";
-import ClientOrders from "./components/ClientOrders";
-import ProfileInfo from "./components/ProfileInfo";
-import { 
-  getClientOrders, 
-  addOrder, 
-  subscribeToChanges,
-  getClientById,
-  getProducts,
-  getServices
-} from "./shared/storage";
+// frontend/src/ClientDashboard.jsx
+import React, { useState, useEffect, useCallback } from 'react';
+import ServicesCatalog from './components/ServicesCatalog';
+import ProductsCatalog from './components/ProductsCatalog';
+import NewOrderForm from './components/NewOrderForm';
+import EditOrderForm from './components/EditOrderForm';
+import ClientOrders from './components/ClientOrders';
+import ProfileInfo from './components/ProfileInfo';
+import { orders, clients, subscribeToChanges } from './shared/storage';
 
 export default function ClientDashboard({ onLogout, currentUser }) {
-  const [page, setPage] = useState("orders");
+  const [page, setPage] = useState('orders');
   const [selectedService, setSelectedService] = useState(null);
   const [selectedProduct, setSelectedProduct] = useState(null);
-  const [orders, setOrders] = useState([]);
+  const [editingOrderId, setEditingOrderId] = useState(null);
+  const [ordersList, setOrdersList] = useState([]);
   const [lastOrder, setLastOrder] = useState(null);
-  const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [loading, setLoading] = useState(true);
   const [clientInfo, setClientInfo] = useState(null);
 
+  const loadClientData = useCallback(async () => {
+    try {
+      const client = await clients.getById(currentUser.id);
+      setClientInfo(client);
+    } catch (err) {
+      console.error('Ошибка загрузки клиента:', err);
+    }
+  }, [currentUser.id]);
+
+  const loadOrders = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await orders.getByClientId(currentUser.id);
+      console.log('Loaded orders:', data);
+      setOrdersList(data || []);
+    } catch (err) {
+      console.error('Ошибка загрузки заказов:', err);
+      setOrdersList([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [currentUser.id]);
+
   useEffect(() => {
-    const loadClientData = () => {
-      const client = getClientById(currentUser.id);
-      if (client) {
-        setClientInfo(client);
-      } else {
-        setClientInfo({
-          fullName: currentUser.fullName,
-          login: currentUser.login,
-          phone: currentUser.phone || "",
-          email: currentUser.email || "",
-          registrationDate: new Date().toISOString().slice(0, 10),
-        });
-      }
-    };
-    
     loadClientData();
-    
-    const handleStorageChange = () => {
+    loadOrders();
+  }, [loadClientData, loadOrders]);
+
+  useEffect(() => {
+    const unsubscribe = subscribeToChanges(() => {
+      loadOrders();
       loadClientData();
-      setRefreshTrigger(prev => prev + 1);
-    };
-    
-    window.addEventListener("storage", handleStorageChange);
-    return () => window.removeEventListener("storage", handleStorageChange);
-  }, [currentUser.id, currentUser.fullName, currentUser.login, currentUser.phone, currentUser.email]);
-
-  useEffect(() => {
-    const clientOrders = getClientOrders(currentUser.id);
-    setOrders(clientOrders);
-  }, [refreshTrigger, currentUser.id]);
-
-  useEffect(() => {
-    const handleStorageChange = () => setRefreshTrigger(prev => prev + 1);
-    subscribeToChanges(handleStorageChange);
-    return () => window.removeEventListener("storage", handleStorageChange);
-  }, []);
-
-  const handleNewOrder = (orderData) => {
-    const newOrder = addOrder({
-      ...orderData,
-      clientId: currentUser.id,
-      clientName: currentUser.fullName,
-      type: orderData.service ? "service" : "product",
     });
-    setOrders(getClientOrders(currentUser.id));
-    setLastOrder(newOrder);
-    setPage("orders");
-    setTimeout(() => setLastOrder(null), 5000);
+    return unsubscribe;
+  }, [loadOrders, loadClientData]);
+
+  const handleNewOrder = async (orderData) => {
+    try {
+      const items = [];
+      if (orderData.type === 'service' && orderData.serviceId) {
+        items.push({
+          itemType: 'service',
+          serviceId: orderData.serviceId,
+          quantity: orderData.quantity || 1,
+        });
+      } else if (orderData.type === 'product' && orderData.productId) {
+        items.push({
+          itemType: 'product',
+          productId: orderData.productId,
+          quantity: orderData.quantity || 1,
+        });
+      } else {
+        alert('Не удалось создать заказ: не выбран товар или услуга');
+        return;
+      }
+
+      const orderPayload = {
+        clientId: currentUser.id,
+        isUrgent: orderData.urgent || false,
+        items: items,
+      };
+
+      const newOrder = await orders.create(orderPayload);
+      await loadOrders();
+      setLastOrder(newOrder);
+      setPage('orders');
+      setTimeout(() => setLastOrder(null), 5000);
+    } catch (err) {
+      console.error('Ошибка создания заказа:', err);
+      alert('Не удалось создать заказ');
+    }
   };
 
   const cancelLastOrder = () => {
     if (lastOrder) {
-      const allOrders = JSON.parse(localStorage.getItem("photo_orders") || "[]");
-      const remaining = allOrders.filter(order => order.id !== lastOrder.id);
-      localStorage.setItem("photo_orders", JSON.stringify(remaining));
-      setOrders(getClientOrders(currentUser.id));
+      setOrdersList(prev => prev.filter(o => o.id !== lastOrder.id));
       setLastOrder(null);
-      window.dispatchEvent(new StorageEvent("storage", { key: "photo_orders" }));
     }
   };
 
+  const handleEditOrder = (orderId) => {
+    setEditingOrderId(orderId);
+    setPage('edit-order');
+  };
+
+  const handleEditSaved = async () => {
+    await loadOrders();
+  };
+
   const handleOrderFromCatalog = (item, type) => {
-    if (type === "service") {
+    if (type === 'service') {
       setSelectedService(item);
       setSelectedProduct(null);
     } else {
       setSelectedProduct(item);
       setSelectedService(null);
     }
-    setPage("new-order");
+    setPage('new-order');
   };
 
   const handleProfileUpdate = () => {
-    const updatedClient = getClientById(currentUser.id);
-    if (updatedClient) {
-      setClientInfo(updatedClient);
-    }
-    setRefreshTrigger(prev => prev + 1);
+    loadClientData();
   };
 
   const renderPage = () => {
+    if (loading && page === 'orders') return <div style={{ textAlign: 'center', padding: '40px' }}>Загрузка...</div>;
+
     switch (page) {
-      case "orders":
-        return <ClientOrders orders={orders} lastOrder={lastOrder} onCancelOrder={cancelLastOrder} />;
-      case "services":
-        return <ServicesCatalog onOrder={handleOrderFromCatalog} refreshTrigger={refreshTrigger} />;
-      case "products":
-        return <ProductsCatalog onOrder={handleOrderFromCatalog} refreshTrigger={refreshTrigger} />;
-      case "new-order":
-        return (
-          <NewOrderForm
-            onSubmit={handleNewOrder}
-            selectedService={selectedService}
-            selectedProduct={selectedProduct}
-            onBack={() => setPage("orders")}
-          />
-        );
-      case "profile":
-        return <ProfileInfo currentUser={{ ...currentUser, ...clientInfo }} onProfileUpdate={handleProfileUpdate} />;
+      case 'orders':
+        return <ClientOrders orders={ordersList} lastOrder={lastOrder} onCancelOrder={cancelLastOrder} onEditOrder={handleEditOrder} />;
+      case 'services':
+        return <ServicesCatalog onOrder={handleOrderFromCatalog} />;
+      case 'products':
+        return <ProductsCatalog onOrder={handleOrderFromCatalog} />;
+      case 'new-order':
+        return <NewOrderForm onSubmit={handleNewOrder} selectedService={selectedService} selectedProduct={selectedProduct} onBack={() => setPage('orders')} clientInfo={clientInfo} />;
+      case 'edit-order':
+        return <EditOrderForm orderId={editingOrderId} onBack={() => setPage('orders')} clientInfo={clientInfo} onSaved={handleEditSaved} />;
+      case 'profile':
+        return <ProfileInfo
+          currentUser={{
+            id: currentUser.id,
+            fullName: clientInfo?.fullName || currentUser?.fullName,
+            phone: clientInfo?.phone || currentUser?.phone,
+            email: clientInfo?.email || currentUser?.email,
+            login: currentUser?.login
+          }}
+          onProfileUpdate={handleProfileUpdate}
+        />;
       default:
-        return <ClientOrders orders={orders} lastOrder={lastOrder} onCancelOrder={cancelLastOrder} />;
+        return <ClientOrders orders={ordersList} lastOrder={lastOrder} onCancelOrder={cancelLastOrder} onEditOrder={handleEditOrder} />;
     }
   };
 
@@ -135,11 +160,11 @@ export default function ClientDashboard({ onLogout, currentUser }) {
           <p style={styles.userName}>{clientInfo?.fullName || currentUser?.fullName}</p>
           <p style={styles.userStatus}>Клиент</p>
         </div>
-        <button style={styles.button} onClick={() => setPage("orders")}>Мои заказы</button>
-        <button style={styles.button} onClick={() => setPage("new-order")}>Новый заказ</button>
-        <button style={styles.button} onClick={() => setPage("services")}>Услуги</button>
-        <button style={styles.button} onClick={() => setPage("products")}>Товары</button>
-        <button style={styles.button} onClick={() => setPage("profile")}>Профиль</button>
+        <button style={styles.button} onClick={() => setPage('orders')}>Мои заказы</button>
+        <button style={styles.button} onClick={() => setPage('new-order')}>Новый заказ</button>
+        <button style={styles.button} onClick={() => setPage('services')}>Услуги</button>
+        <button style={styles.button} onClick={() => setPage('products')}>Товары</button>
+        <button style={styles.button} onClick={() => setPage('profile')}>Профиль</button>
         <button style={styles.logout} onClick={onLogout}>Выйти</button>
       </aside>
       <main style={styles.content}>{renderPage()}</main>

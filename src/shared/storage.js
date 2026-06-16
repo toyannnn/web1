@@ -1,403 +1,231 @@
-export const STORAGE_KEYS = {
-  PRODUCTS: "photo_products",
-  SERVICES: "photo_services",
-  ORDERS: "photo_orders",
-  CLIENTS: "photo_clients",
-  BRANCHES: "photo_branches",
-  EMPLOYEES: "photo_employees",
-  USERS: "photo_users",
-  getClients,
-  getClientOrders,
-  getClientById,
-  updateClient,
+// frontend/src/shared/storage.js
+
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5191/api';
+
+// Получение токена
+const getToken = () => localStorage.getItem('token');
+
+// Базовый запрос к API
+const request = async (endpoint, options = {}) => {
+  const token = getToken();
+  
+  const headers = {
+    'Content-Type': 'application/json',
+    ...options.headers,
+  };
+  
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  
+  const response = await fetch(`${API_URL}${endpoint}`, {
+    ...options,
+    headers,
+  });
+  
+  if (response.status === 401) {
+    localStorage.removeItem('token');
+    localStorage.removeItem('currentUser');
+    window.dispatchEvent(new CustomEvent('unauthorized'));
+    throw new Error('Сессия истекла. Пожалуйста, войдите снова.');
+  }
+  
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ message: 'Ошибка сервера' }));
+    throw new Error(error.message || `Ошибка: ${response.status}`);
+  }
+  
+  return response.json();
 };
 
-export function getClients() {
-  const saved = localStorage.getItem(STORAGE_KEYS.CLIENTS);
-  if (saved) return JSON.parse(saved);
-  localStorage.setItem(STORAGE_KEYS.CLIENTS, JSON.stringify(initialClients));
-  return initialClients;
-}
-
-export function saveClients(clients) {
-  localStorage.setItem(STORAGE_KEYS.CLIENTS, JSON.stringify(clients));
-  window.dispatchEvent(new StorageEvent("storage", { key: STORAGE_KEYS.CLIENTS }));
-}
-
-export function addClient(clientData) {
-  const clients = getClients();
-  const newClient = {
-    id: Date.now(),
-    fullName: clientData.fullName,
-    login: clientData.login,
-    password: clientData.password,
-    phone: clientData.phone || "",
-    email: clientData.email || "",
-    registrationDate: new Date().toISOString().slice(0, 10),
-    discountCard: false,
-  };
+// ==================== АУТЕНТИФИКАЦИЯ ====================
+export const auth = {
+  login: async (login, password) => {
+    const data = await request('/Auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ login, password }),
+    });
+    localStorage.setItem('token', data.token);
+    localStorage.setItem('currentUser', JSON.stringify(data.user));
+    return data.user;
+  },
   
-  if (clients.some(c => c.login === newClient.login)) {
-    throw new Error("Клиент с таким логином уже существует");
-  }
+  register: async (userData) => {
+    return request('/Auth/register', {
+      method: 'POST',
+      body: JSON.stringify(userData),
+    });
+  },
   
-  clients.push(newClient);
-  saveClients(clients);
-  return newClient;
-}
-
-export function updateClient(clientId, updates) {
-  const clients = getClients();
-  const updated = clients.map(c => 
-    c.id === clientId 
-      ? { ...c, ...updates }
-      : c
-  );
-  saveClients(updated);
+  logout: () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('currentUser');
+  },
   
-  const users = getUsers();
-  const updatedUsers = users.map(u => 
-    u.id === clientId && u.role === "client"
-      ? { ...u, fullName: updates.fullName || u.fullName, phone: updates.phone || u.phone, email: updates.email || u.email }
-      : u
-  );
-  saveUsers(updatedUsers);
+  getCurrentUser: () => {
+    const user = localStorage.getItem('currentUser');
+    return user ? JSON.parse(user) : null;
+  },
   
-  return updated;
-}
+  isAuthenticated: () => !!getToken(),
+};
 
-export function deleteClient(clientId) {
-  const clients = getClients();
-  const updated = clients.filter(c => c.id !== clientId);
-  saveClients(updated);
-  return updated;
-}
+// ==================== КЛИЕНТЫ ====================
+export const clients = {
+  getAll: async () => request('/Clients'),
+  getById: async (id) => request(`/Clients/${id}`),
+  update: async (id, data) => request(`/Clients/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  }),
+  getOrders: async (clientId) => request(`/Orders/client/${clientId}`),
+};
 
-export function getClientById(clientId) {
-  const clients = getClients();
-  return clients.find(c => c.id === clientId) || null;
-}
+// ==================== ЗАКАЗЫ ====================
+export const orders = {
+  getAll: async () => request('/Orders'),
+  getById: async (id) => request(`/Orders/${id}`),
+  getByClientId: async (clientId) => request(`/Orders/client/${clientId}`),
+  create: async (orderData) => request('/Orders', {
+    method: 'POST',
+    body: JSON.stringify(orderData),
+  }),
+  update: async (id, orderData) => request(`/Orders/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(orderData),
+  }),
+  updateStatus: async (orderId, status) => request(`/Orders/${orderId}/status`, {
+    method: 'PUT',
+    body: JSON.stringify(status),
+  }),
+  calculateTotal: async (orderData) => request('/Orders/calculate', {
+    method: 'POST',
+    body: JSON.stringify(orderData),
+  }),
+};
 
-export function getClientByLogin(login) {
-  const clients = getClients();
-  return clients.find(c => c.login === login) || null;
-}
+// ==================== ТОВАРЫ ====================
+export const products = {
+  getAll: async () => request('/Products'),  // ← теперь через request (с токеном)
+  getById: async (id) => request(`/Products/${id}`),
+  create: async (productData) => request('/Products', {
+    method: 'POST',
+    body: JSON.stringify(productData),
+  }),
+  update: async (id, productData) => request(`/Products/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(productData),
+  }),
+  delete: async (id) => request(`/Products/${id}`, { method: 'DELETE' }),
+};
 
-export function getClientOrders(clientId) {
-  const orders = getOrders();
-  return orders.filter(order => order.clientId === clientId);
-}
+// ==================== УСЛУГИ ====================
+export const services = {
+  getAll: async () => request('/Services'),  // ← теперь через request (с токеном)
+  getById: async (id) => request(`/Services/${id}`),
+  create: async (serviceData) => request('/Services', {
+    method: 'POST',
+    body: JSON.stringify(serviceData),
+  }),
+  update: async (id, serviceData) => request(`/Services/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(serviceData),
+  }),
+  delete: async (id) => request(`/Services/${id}`, { method: 'DELETE' }),
+};
 
-const initialUsers = [
-  {
-    id: 1,
-    login: "admin",
-    password: "admin123",
-    role: "admin",
-    fullName: "Главный администратор",
-    phone: "+7 (999) 111-22-33",
-    email: "admin@photocenter.ru",
-    createdAt: "2024-01-01",
-  },
-  {
-    id: 2,
-    login: "employee",
-    password: "employee123",
-    role: "employee",
-    fullName: "Сотрудник фотоцентра",
-    phone: "+7 (999) 222-33-44",
-    email: "employee@photocenter.ru",
-    createdAt: "2024-01-01",
-  },
-];
+// ==================== ТОЧКИ ПРОДАЖ ====================
+export const branches = {
+  getAll: async () => request('/Branches'),
+  getById: async (id) => request(`/Branches/${id}`),
+  create: async (branchData) => request('/Branches', {
+    method: 'POST',
+    body: JSON.stringify({
+      ...branchData,
+      openDate: branchData.openDate || new Date().toISOString().slice(0, 10)
+    }),
+  }),
+  update: async (id, branchData) => request(`/Branches/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(branchData),
+  }),
+  delete: async (id) => request(`/Branches/${id}`, { method: 'DELETE' }),
+};
 
-const initialClients = [];
+// ==================== СОТРУДНИКИ ====================
+export const employees = {
+  getAll: async () => request('/Employees'),
+  getById: async (id) => request(`/Employees/${id}`),
+  create: async (employeeData) => request('/Employees', {
+    method: 'POST',
+    body: JSON.stringify(employeeData),
+  }),
+  update: async (id, employeeData) => request(`/Employees/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(employeeData),
+  }),
+  delete: async (id) => request(`/Employees/${id}`, { method: 'DELETE' }),
+};
 
-const initialBranches = [
-  {
-    id: 1,
-    name: "Фотоцентр Центральный",
-    type: "Филиал",
-    address: "Москва, ул. Ленина, 12",
-    status: "Активна",
-    phone: "+7 (495) 123-45-67",
-    email: "central@photocenter.ru",
-    workingHours: "09:00 - 21:00",
-  },
-  {
-    id: 2,
-    name: "ФотоКиоск ТЦ Европа",
-    type: "Киоск",
-    address: "Москва, ТЦ Европа, 2 этаж",
-    status: "Активна",
-    processor: "Фотоцентр Центральный",
-    phone: "+7 (495) 765-43-21",
-    email: "europa@photocenter.ru",
-    workingHours: "10:00 - 22:00",
-  },
-  {
-    id: 3,
-    name: "ФотоМаркет Север",
-    type: "Магазин",
-    address: "Москва, ул. Победы, 55",
-    status: "Архив",
-    phone: "+7 (495) 987-65-43",
-    email: "north@photocenter.ru",
-    workingHours: "09:00 - 20:00",
-  },
-];
+// ==================== ПОЛЬЗОВАТЕЛИ ====================
+export const users = {
+  getAll: async () => request('/Users'),
+  create: async (userData) => request('/Users', {
+    method: 'POST',
+    body: JSON.stringify(userData),
+  }),
+  update: async (id, userData) => request(`/Users/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(userData),
+  }),
+  delete: async (id) => request(`/Users/${id}`, { method: 'DELETE' }),
+  resetPassword: async (id, newPassword) => request(`/Users/${id}/reset-password`, {
+    method: 'POST',
+    body: JSON.stringify({ newPassword }),
+  }),
+};
 
-const initialEmployees = [
-  {
-    id: 1,
-    name: "Иванов Иван",
-    login: "ivanov",
-    role: "Администратор",
-    status: "Активен",
-    phone: "+7 (999) 111-22-33",
-    email: "ivanov@photocenter.ru",
-    hireDate: "2024-01-15",
-  },
-  {
-    id: 2,
-    name: "Петров Алексей",
-    login: "petrov",
-    role: "Сотрудник точки",
-    status: "Активен",
-    phone: "+7 (999) 222-33-44",
-    email: "petrov@photocenter.ru",
-    hireDate: "2024-03-20",
-  },
-  {
-    id: 3,
-    name: "Сидорова Анна",
-    login: "sidorova",
-    role: "Управляющий",
-    status: "Заблокирован",
-    phone: "+7 (999) 333-44-55",
-    email: "sidorova@photocenter.ru",
-    hireDate: "2023-11-10",
-  },
-];
+// ==================== СЛУШАТЕЛЬ СОБЫТИЙ ====================
+let storageCallbacks = [];
 
-export function getBranches() {
-  const saved = localStorage.getItem(STORAGE_KEYS.BRANCHES);
-  if (saved) return JSON.parse(saved);
-  localStorage.setItem(STORAGE_KEYS.BRANCHES, JSON.stringify(initialBranches));
-  return initialBranches;
-}
-
-export function saveBranches(branches) {
-  localStorage.setItem(STORAGE_KEYS.BRANCHES, JSON.stringify(branches));
-  window.dispatchEvent(new StorageEvent("storage", { key: STORAGE_KEYS.BRANCHES }));
-}
-
-export function getEmployees() {
-  const saved = localStorage.getItem(STORAGE_KEYS.EMPLOYEES);
-  if (saved) return JSON.parse(saved);
-  localStorage.setItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify(initialEmployees));
-  return initialEmployees;
-}
-
-export function saveEmployees(employees) {
-  localStorage.setItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify(employees));
-  window.dispatchEvent(new StorageEvent("storage", { key: STORAGE_KEYS.EMPLOYEES }));
-}
-
-export function addBranch(branch) {
-  const branches = getBranches();
-  const newBranch = { ...branch, id: Date.now() };
-  branches.push(newBranch);
-  saveBranches(branches);
-  return newBranch;
-}
-
-export function updateBranch(branchId, updates) {
-  const branches = getBranches();
-  const updated = branches.map(b => b.id === branchId ? { ...b, ...updates } : b);
-  saveBranches(updated);
-  return updated;
-}
-
-export function deleteBranch(branchId) {
-  const branches = getBranches();
-  const updated = branches.filter(b => b.id !== branchId);
-  saveBranches(updated);
-  return updated;
-}
-
-export function addEmployee(employee) {
-  const employees = getEmployees();
-  const newEmployee = { ...employee, id: Date.now(), hireDate: new Date().toISOString().slice(0, 10) };
-  employees.push(newEmployee);
-  saveEmployees(employees);
-  return newEmployee;
-}
-
-export function updateEmployee(employeeId, updates) {
-  const employees = getEmployees();
-  const updated = employees.map(e => e.id === employeeId ? { ...e, ...updates } : e);
-  saveEmployees(updated);
-  return updated;
-}
-
-export function deleteEmployee(employeeId) {
-  const employees = getEmployees();
-  const updated = employees.filter(e => e.id !== employeeId);
-  saveEmployees(updated);
-  return updated;
-}
-
-export function getUsers() {
-  const saved = localStorage.getItem(STORAGE_KEYS.USERS);
-  if (saved) return JSON.parse(saved);
-  localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(initialUsers));
-  return initialUsers;
-}
-
-export function saveUsers(users) {
-  localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
-  window.dispatchEvent(new StorageEvent("storage", { key: STORAGE_KEYS.USERS }));
-}
-
-export function addUser(userData) {
-  const users = getUsers();
-  const newUser = {
-    id: Date.now(),
-    login: userData.login,
-    password: userData.password,
-    role: userData.role,
-    fullName: userData.fullName,
-    phone: userData.phone || "",
-    email: userData.email || "",
-    createdAt: new Date().toISOString().slice(0, 10),
+export const subscribeToChanges = (callback) => {
+  storageCallbacks.push(callback);
+  return () => {
+    storageCallbacks = storageCallbacks.filter(cb => cb !== callback);
   };
-  if (users.some(u => u.login === newUser.login)) {
-    throw new Error("Пользователь с таким логином уже существует");
-  }
-  users.push(newUser);
-  saveUsers(users);
-  return newUser;
-}
+};
 
-export function addClientUser(clientData) {
-  const users = getUsers();
-  const newUser = {
-    id: clientData.id,
-    login: clientData.login,
-    password: clientData.password,
-    role: "client",
-    fullName: clientData.fullName,
-    phone: clientData.phone || "",
-    email: clientData.email || "",
-    createdAt: clientData.registrationDate,
-  };
-  if (users.some(u => u.login === newUser.login)) {
-    throw new Error("Пользователь с таким логином уже существует");
-  }
-  users.push(newUser);
-  saveUsers(users);
-  return newUser;
-}
-
-export function updateUser(userId, updates) {
-  const users = getUsers();
-  const updated = users.map(u => u.id === userId ? { ...u, ...updates } : u);
-  saveUsers(updated);
-  return updated;
-}
-
-export function deleteUser(userId) {
-  const users = getUsers();
-  const updated = users.filter(u => u.id !== userId);
-  saveUsers(updated);
-  return updated;
-}
-
-export function authenticateUser(login, password) {
-  const users = getUsers();
-  return users.find(u => u.login === login && u.password === password) || null;
-}
-
-const initialProducts = [
-  { id: 1, name: "Фотопленка Kodak Gold", category: "Фотопленки", price: 1200, quantity: 20 },
-  { id: 2, name: "Фотоаппарат Canon EOS", category: "Фотоаппараты", price: 95000, quantity: 3 },
-  { id: 3, name: "Фотоальбом Premium", category: "Альбомы", price: 1800, quantity: 15 },
-  { id: 4, name: "Фотобумага A4", category: "Фотобумага", price: 900, quantity: 50 },
-  { id: 5, name: "Прокат фотоаппарата", category: "Прокат", price: 3500, quantity: 10 },
-  { id: 6, name: "Объектив Canon RF", category: "Аксессуары", price: 45000, quantity: 4 },
-  { id: 7, name: "Штатив Manfrotto", category: "Аксессуары", price: 12000, quantity: 7 },
-];
-
-const initialServices = [
-  { id: 1, name: "Проявка пленки", category: "Фотопечать", price: 500, description: "Проявка фотопленок любых форматов" },
-  { id: 2, name: "Печать фотографий", category: "Фотопечать", price: 15, description: "Печать фотографий на профессиональной бумаге" },
-  { id: 3, name: "Проявка + печать", category: "Комплексная услуга", price: 1200, description: "Полный цикл проявки и печати фотографий" },
-  { id: 4, name: "Фото на документы", category: "Документы", price: 450, description: "Фотографии на паспорт, визу и документы" },
-  { id: 5, name: "Реставрация фотографий", category: "Обработка", price: 2500, description: "Восстановление старых фотографий" },
-  { id: 6, name: "Художественное фото", category: "Фотосессии", price: 7000, description: "Профессиональная художественная съемка" },
-  { id: 7, name: "Услуги фотографа", category: "Фотосессии", price: 5000, description: "Работа профессионального фотографа" },
-];
-
-export function getProducts() {
-  const saved = localStorage.getItem(STORAGE_KEYS.PRODUCTS);
-  if (saved) return JSON.parse(saved);
-  localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(initialProducts));
-  return initialProducts;
-}
-
-export function getServices() {
-  const saved = localStorage.getItem(STORAGE_KEYS.SERVICES);
-  if (saved) return JSON.parse(saved);
-  localStorage.setItem(STORAGE_KEYS.SERVICES, JSON.stringify(initialServices));
-  return initialServices;
-}
-
-export function getOrders() {
-  const saved = localStorage.getItem(STORAGE_KEYS.ORDERS);
-  return saved ? JSON.parse(saved) : [];
-}
-
-export function saveOrders(orders) {
-  localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(orders));
-  window.dispatchEvent(new StorageEvent("storage", { key: STORAGE_KEYS.ORDERS }));
-}
-
-export function saveProducts(products) {
-  localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(products));
-}
-
-export function saveServices(services) {
-  localStorage.setItem(STORAGE_KEYS.SERVICES, JSON.stringify(services));
-}
-
-export function addOrder(orderData) {
-  const orders = getOrders();
-  const newOrder = {
-    id: Date.now(),
-    ...orderData,
-    date: new Date().toISOString().slice(0, 10),
-    status: "Принят",
-  };
-  orders.unshift(newOrder);
-  saveOrders(orders);
-  return newOrder;
-}
-
-export function updateOrderStatus(orderId, newStatus) {
-  const orders = getOrders();
-  const updated = orders.map(order => order.id === orderId ? { ...order, status: newStatus } : order);
-  saveOrders(updated);
-  return updated;
-}
-
-export function subscribeToChanges(callback) {
-  window.addEventListener("storage", (e) => {
-    if (e.key === STORAGE_KEYS.PRODUCTS || e.key === STORAGE_KEYS.SERVICES || 
-        e.key === STORAGE_KEYS.ORDERS || e.key === STORAGE_KEYS.CLIENTS || 
-        e.key === STORAGE_KEYS.USERS || e.key === STORAGE_KEYS.BRANCHES || 
-        e.key === STORAGE_KEYS.EMPLOYEES) {
-      callback();
+if (typeof window !== 'undefined') {
+  window.addEventListener('unauthorized', () => {
+    storageCallbacks.forEach(cb => cb({ type: 'unauthorized' }));
+  });
+  
+  window.addEventListener('storage', (e) => {
+    if (e.key === 'photo_orders' || e.key === 'photo_clients') {
+      storageCallbacks.forEach(cb => cb({ type: 'storage', key: e.key }));
     }
   });
 }
+
+// Для обратной совместимости
+export const getClients = () => clients.getAll();
+export const getClientById = (id) => clients.getById(id);
+export const getClientOrders = (clientId) => clients.getOrders(clientId);
+export const getOrders = () => orders.getAll();
+export const updateOrderStatus = (orderId, status) => orders.updateStatus(orderId, status);
+export const addOrder = (orderData) => orders.create(orderData);
+export const getProducts = () => products.getAll();
+export const getServices = () => services.getAll();
+export const getBranches = () => branches.getAll();
+export const addBranch = (branchData) => branches.create(branchData);
+export const updateBranch = (id, branchData) => branches.update(id, branchData);
+export const deleteBranch = (id) => branches.delete(id);
+export const getEmployees = () => employees.getAll();
+export const addEmployee = (employeeData) => employees.create(employeeData);
+export const updateEmployee = (id, employeeData) => employees.update(id, employeeData);
+export const deleteEmployee = (id) => employees.delete(id);
+export const getUsers = () => users.getAll();
+export const addUser = (userData) => users.create(userData);
+export const updateUser = (id, userData) => users.update(id, userData);
+export const deleteUser = (id) => users.delete(id);
+export const calculateOrderPrice = (params) => orders.calculateTotal(params);

@@ -1,24 +1,45 @@
+// frontend/src/components/ServicesCatalog.jsx
 import React, { useState, useEffect } from "react";
-import { getServices } from "../shared/storage";
+import { services } from "../shared/storage";
 
 export default function ServicesCatalog({ onOrder, refreshTrigger }) {
-  const [services, setServices] = useState([]);
+  const [servicesList, setServicesList] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const loadServices = async () => {
+    setLoading(true);
+    try {
+      const data = await services.getAll();
+      setServicesList(data);
+    } catch (err) {
+      console.error("Ошибка загрузки услуг:", err);
+      setServicesList([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    setServices(getServices());
+    loadServices();
   }, [refreshTrigger]);
+
+  if (loading) {
+    return <div style={{ textAlign: "center", padding: "40px" }}>Загрузка услуг...</div>;
+  }
 
   return (
     <div>
       <h2>Каталог услуг</h2>
       <div style={styles.grid}>
-        {services.map((service) => (
+        {servicesList.map((service) => (
           <div key={service.id} style={styles.card}>
             <h3>{service.name}</h3>
             <p>Категория: {service.category}</p>
             <p>{service.description}</p>
             <h2>{service.price} ₽</h2>
-            <button style={styles.button} onClick={() => onOrder(service, "service")}>Заказать услугу</button>
+            <button style={styles.button} onClick={() => onOrder(service, "service")}>
+              Заказать услугу
+            </button>
           </div>
         ))}
       </div>

@@ -1,24 +1,45 @@
+// frontend/src/components/ProductsCatalog.jsx
 import React, { useState, useEffect } from "react";
-import { getProducts } from "../shared/storage";
+import { products } from "../shared/storage";
 
 export default function ProductsCatalog({ onOrder, refreshTrigger }) {
-  const [products, setProducts] = useState([]);
+  const [productsList, setProductsList] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const loadProducts = async () => {
+    setLoading(true);
+    try {
+      const data = await products.getAll();
+      setProductsList(data);
+    } catch (err) {
+      console.error("Ошибка загрузки товаров:", err);
+      setProductsList([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    setProducts(getProducts());
+    loadProducts();
   }, [refreshTrigger]);
+
+  if (loading) {
+    return <div style={{ textAlign: "center", padding: "40px" }}>Загрузка товаров...</div>;
+  }
 
   return (
     <div>
       <h2>Каталог товаров</h2>
       <div style={styles.grid}>
-        {products.map((product) => (
+        {productsList.map((product) => (
           <div key={product.id} style={styles.card}>
             <h3>{product.name}</h3>
             <p>Категория: {product.category}</p>
             <p>Остаток: {product.quantity} шт.</p>
             <h2>{product.price} ₽</h2>
-            <button style={styles.button} onClick={() => onOrder(product, "product")}>Купить товар</button>
+<button style={styles.button} onClick={() => onOrder(product, "product")}>
+  Купить товар
+</button>
           </div>
         ))}
       </div>
@@ -26,7 +47,7 @@ export default function ProductsCatalog({ onOrder, refreshTrigger }) {
   );
 }
 
-const styles = {
+  const styles = {
   grid: {
     display: "grid",
     gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",

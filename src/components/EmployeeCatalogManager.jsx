@@ -149,7 +149,6 @@ export default function EmployeeCatalogManager() {
       </h1>
 
       <div style={styles.grid}>
-        {/* УСЛУГИ */}
         <div style={styles.block}>
           <h2>Услуги</h2>
 
@@ -237,7 +236,6 @@ export default function EmployeeCatalogManager() {
           </div>
         </div>
 
-        {/* ТОВАРЫ */}
         <div style={styles.block}>
           <h2>Товары</h2>
 
