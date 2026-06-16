@@ -1,4 +1,3 @@
-// frontend/src/App.js
 import React, { useState, useEffect } from 'react';
 import AdminDashboard from './AdminDashboard';
 import EmployeeDashboard from './EmployeeDashboard';

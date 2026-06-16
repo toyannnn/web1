@@ -1,4 +1,3 @@
-// frontend/src/EmployeeDashboard.jsx
 import React, { useState, useEffect, useCallback } from 'react';
 import { orders, products, services, clients, subscribeToChanges } from './shared/storage';
 

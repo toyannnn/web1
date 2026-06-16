@@ -1,4 +1,3 @@
-// frontend/src/components/ClientOrders.jsx
 import React, { useMemo } from "react";
 
 export default function ClientOrders({ orders, lastOrder, onCancelOrder, onEditOrder }) {

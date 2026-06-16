@@ -1,4 +1,3 @@
-// frontend/src/components/ServicesCatalog.jsx
 import React, { useState, useEffect } from "react";
 import { services } from "../shared/storage";
 

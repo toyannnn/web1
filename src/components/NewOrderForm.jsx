@@ -1,4 +1,3 @@
-// frontend/src/components/NewOrderForm.jsx
 import React, { useState, useEffect } from "react";
 import { services, products } from "../shared/storage";
 

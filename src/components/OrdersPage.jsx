@@ -1,4 +1,3 @@
-// frontend/src/components/OrdersPage.jsx
 import React, { useState, useEffect, useCallback } from 'react';
 import { orders, subscribeToChanges } from '../shared/storage';
 
@@ -38,12 +37,10 @@ export default function OrdersPage() {
     }
   }, []);
 
-  // Первоначальная загрузка
   useEffect(() => {
     loadOrders();
   }, [loadOrders]);
 
-  // Подписка на изменения (синхронизация между вкладками)
   useEffect(() => {
     const unsubscribe = subscribeToChanges(() => {
       loadOrders();
@@ -51,18 +48,16 @@ export default function OrdersPage() {
     return unsubscribe;
   }, [loadOrders]);
 
-  // Изменение статуса заказа
   const handleStatusChange = async (orderId, newStatus) => {
     try {
       await orders.updateStatus(orderId, newStatus);
-      await loadOrders(); // Перезагружаем список
+      await loadOrders();
     } catch (err) {
       console.error('Ошибка обновления статуса:', err);
       alert('Не удалось обновить статус заказа');
     }
   };
 
-  // Фильтрация заказов
   const filteredOrders = ordersList.filter(order => {
     const statusMatch = statusFilter === 'Все' || order.status === statusFilter;
     const searchMatch = searchTerm === '' || 

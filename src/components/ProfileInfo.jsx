@@ -1,4 +1,3 @@
-// frontend/src/components/ProfileInfo.jsx
 import React, { useState, useEffect, useCallback } from "react";
 import { clients, subscribeToChanges } from "../shared/storage";
 
@@ -17,7 +16,6 @@ export default function ProfileInfo({ currentUser, onProfileUpdate }) {
   const [saveMessage, setSaveMessage] = useState("");
   const [isLoading, setIsLoading] = useState(true);
 
-  // Загрузка данных клиента из API (обернута в useCallback)
   const loadClientData = useCallback(async () => {
     setIsLoading(true);
     try {
@@ -44,12 +42,10 @@ export default function ProfileInfo({ currentUser, onProfileUpdate }) {
     }
   }, [currentUser.id, currentUser.fullName, currentUser.phone, currentUser.email]);
 
-  // Загрузка данных при монтировании и изменении currentUser.id
   useEffect(() => {
     loadClientData();
   }, [loadClientData]);
 
-  // Подписка на изменения данных
   useEffect(() => {
     const unsubscribe = subscribeToChanges(() => {
       loadClientData();
@@ -81,7 +77,6 @@ export default function ProfileInfo({ currentUser, onProfileUpdate }) {
         onProfileUpdate();
       }
       
-      // Обновляем localStorage для синхронизации
       const updatedUser = { ...currentUser, ...updatedClient };
       localStorage.setItem("currentUser", JSON.stringify(updatedUser));
       

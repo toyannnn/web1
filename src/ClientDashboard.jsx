@@ -1,4 +1,3 @@
-// frontend/src/ClientDashboard.jsx
 import React, { useState, useEffect, useCallback } from 'react';
 import ServicesCatalog from './components/ServicesCatalog';
 import ProductsCatalog from './components/ProductsCatalog';

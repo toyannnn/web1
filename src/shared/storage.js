@@ -1,11 +1,7 @@
-// frontend/src/shared/storage.js
-
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5191/api';
 
-// Получение токена
 const getToken = () => localStorage.getItem('token');
 
-// Базовый запрос к API
 const request = async (endpoint, options = {}) => {
   const token = getToken();
   
@@ -106,7 +102,7 @@ export const orders = {
 
 // ==================== ТОВАРЫ ====================
 export const products = {
-  getAll: async () => request('/Products'),  // ← теперь через request (с токеном)
+  getAll: async () => request('/Products'),
   getById: async (id) => request(`/Products/${id}`),
   create: async (productData) => request('/Products', {
     method: 'POST',
@@ -121,7 +117,7 @@ export const products = {
 
 // ==================== УСЛУГИ ====================
 export const services = {
-  getAll: async () => request('/Services'),  // ← теперь через request (с токеном)
+  getAll: async () => request('/Services'),
   getById: async (id) => request(`/Services/${id}`),
   create: async (serviceData) => request('/Services', {
     method: 'POST',
